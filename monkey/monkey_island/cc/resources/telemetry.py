@@ -7,17 +7,17 @@ import dateutil
 import flask_restful
 from flask import request
 
-from cc.auth import jwt_required
-from cc.database import mongo
-from cc.services import mimikatz_utils
-from cc.services.config import ConfigService
-from cc.services.edge import EdgeService
-from cc.services.node import NodeService
-from cc.encryptor import encryptor
-from cc.services.wmi_handler import WMIHandler
+from monkey_island.cc.auth import jwt_required
+from monkey_island.cc.database import mongo
+from monkey_island.cc.services import mimikatz_utils
+from monkey_island.cc.services.config import ConfigService
+from monkey_island.cc.services.edge import EdgeService
+from monkey_island.cc.services.node import NodeService
+from monkey_island.cc.encryptor import encryptor
+from monkey_island.cc.services.wmi_handler import WMIHandler
+from monkey_island.cc.models.monkey import Monkey
 
 __author__ = 'Barak'
-
 
 logger = logging.getLogger(__name__)
 
@@ -26,7 +26,7 @@ class Telemetry(flask_restful.Resource):
     @jwt_required()
     def get(self, **kw):
         monkey_guid = request.args.get('monkey_guid')
-        telem_type = request.args.get('telem_type')
+        telem_category = request.args.get('telem_category')
         timestamp = request.args.get('timestamp')
         if "null" == timestamp:  # special case to avoid ugly JS code...
             timestamp = None
@@ -36,8 +36,8 @@ class Telemetry(flask_restful.Resource):
 
         if monkey_guid:
             find_filter["monkey_guid"] = {'$eq': monkey_guid}
-        if telem_type:
-            find_filter["telem_type"] = {'$eq': telem_type}
+        if telem_category:
+            find_filter["telem_category"] = {'$eq': telem_category}
         if timestamp:
             find_filter['timestamp'] = {'$gt': dateutil.parser.parse(timestamp)}
 
@@ -49,17 +49,20 @@ class Telemetry(flask_restful.Resource):
         telemetry_json = json.loads(request.data)
         telemetry_json['timestamp'] = datetime.now()
 
+        # Monkey communicated, so it's alive. Update the TTL.
+        Monkey.get_single_monkey_by_guid(telemetry_json['monkey_guid']).renew_ttl()
+
         monkey = NodeService.get_monkey_by_guid(telemetry_json['monkey_guid'])
 
         try:
             NodeService.update_monkey_modify_time(monkey["_id"])
-            telem_type = telemetry_json.get('telem_type')
-            if telem_type in TELEM_PROCESS_DICT:
-                TELEM_PROCESS_DICT[telem_type](telemetry_json)
+            telem_category = telemetry_json.get('telem_category')
+            if telem_category in TELEM_PROCESS_DICT:
+                TELEM_PROCESS_DICT[telem_category](telemetry_json)
             else:
-                logger.info('Got unknown type of telemetry: %s' % telem_type)
+                logger.info('Got unknown type of telemetry: %s' % telem_category)
         except Exception as ex:
-            logger.error("Exception caught while processing telemetry", exc_info=True)
+            logger.error("Exception caught while processing telemetry. Info: {}".format(ex.message), exc_info=True)
 
         telem_id = mongo.db.telemetry.insert(telemetry_json)
         return mongo.db.telemetry.find_one_or_404({"_id": telem_id})
@@ -79,7 +82,7 @@ class Telemetry(flask_restful.Resource):
                 monkey_label = telem_monkey_guid
             x["monkey"] = monkey_label
             objects.append(x)
-            if x['telem_type'] == 'system_info_collection' and 'credentials' in x['data']:
+            if x['telem_category'] == 'system_info' and 'credentials' in x['data']:
                 for user in x['data']['credentials']:
                     if -1 != user.find(','):
                         new_user = user.replace(',', '.')
@@ -119,6 +122,8 @@ class Telemetry(flask_restful.Resource):
     def process_exploit_telemetry(telemetry_json):
         edge = Telemetry.get_edge_by_scan_or_exploit_telemetry(telemetry_json)
         Telemetry.encrypt_exploit_creds(telemetry_json)
+        telemetry_json['data']['info']['started'] = dateutil.parser.parse(telemetry_json['data']['info']['started'])
+        telemetry_json['data']['info']['finished'] = dateutil.parser.parse(telemetry_json['data']['info']['finished'])
 
         new_exploit = copy.deepcopy(telemetry_json['data'])
 
@@ -186,7 +191,7 @@ class Telemetry(flask_restful.Resource):
             Telemetry.add_system_info_creds_to_config(creds)
             Telemetry.replace_user_dot_with_comma(creds)
         if 'mimikatz' in telemetry_json['data']:
-            users_secrets = mimikatz_utils.MimikatzSecrets.\
+            users_secrets = mimikatz_utils.MimikatzSecrets. \
                 extract_secrets_from_mimikatz(telemetry_json['data'].get('mimikatz', ''))
         if 'wmi' in telemetry_json['data']:
             wmi_handler = WMIHandler(monkey_id, telemetry_json['data']['wmi'], users_secrets)
@@ -257,6 +262,17 @@ class Telemetry(flask_restful.Resource):
                 if len(credential) > 0:
                     attempts[i][field] = encryptor.enc(credential.encode('utf-8'))
 
+    @staticmethod
+    def process_post_breach_telemetry(telemetry_json):
+        mongo.db.monkey.update(
+            {'guid': telemetry_json['monkey_guid']},
+            {'$push': {'pba_results': telemetry_json['data']}})
+
+    @staticmethod
+    def process_attack_telemetry(telemetry_json):
+        # No processing required
+        pass
+
 
 TELEM_PROCESS_DICT = \
     {
@@ -264,6 +280,8 @@ TELEM_PROCESS_DICT = \
         'state': Telemetry.process_state_telemetry,
         'exploit': Telemetry.process_exploit_telemetry,
         'scan': Telemetry.process_scan_telemetry,
-        'system_info_collection': Telemetry.process_system_info_telemetry,
-        'trace': Telemetry.process_trace_telemetry
+        'system_info': Telemetry.process_system_info_telemetry,
+        'trace': Telemetry.process_trace_telemetry,
+        'post_breach': Telemetry.process_post_breach_telemetry,
+        'attack': Telemetry.process_attack_telemetry
     }

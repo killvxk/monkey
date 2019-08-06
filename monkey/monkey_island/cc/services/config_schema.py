@@ -13,42 +13,48 @@ SCHEMA = {
                     "enum": [
                         "SmbExploiter"
                     ],
-                    "title": "SMB Exploiter"
+                    "title": "SMB Exploiter",
+                    "attack_techniques": ["T1110", "T1075", "T1035"]
                 },
                 {
                     "type": "string",
                     "enum": [
                         "WmiExploiter"
                     ],
-                    "title": "WMI Exploiter"
+                    "title": "WMI Exploiter",
+                    "attack_techniques": ["T1110", "T1106"]
                 },
                 {
                     "type": "string",
                     "enum": [
                         "MSSQLExploiter"
                     ],
-                    "title": "MSSQL Exploiter"
+                    "title": "MSSQL Exploiter",
+                    "attack_techniques": ["T1110"]
                 },
                 {
                     "type": "string",
                     "enum": [
                         "RdpExploiter"
                     ],
-                    "title": "RDP Exploiter (UNSAFE)"
+                    "title": "RDP Exploiter (UNSAFE)",
+                    "attack_techniques": []
                 },
                 {
                     "type": "string",
                     "enum": [
                         "Ms08_067_Exploiter"
                     ],
-                    "title": "MS08-067 Exploiter (UNSAFE)"
+                    "title": "MS08-067 Exploiter (UNSAFE)",
+                    "attack_techniques": []
                 },
                 {
                     "type": "string",
                     "enum": [
                         "SSHExploiter"
                     ],
-                    "title": "SSH Exploiter"
+                    "title": "SSH Exploiter",
+                    "attack_techniques": ["T1110", "T1145", "T1106"]
                 },
                 {
                     "type": "string",
@@ -83,7 +89,7 @@ SCHEMA = {
                     "enum": [
                         "WebLogicExploiter"
                     ],
-                    "title": "Oracle Web Logic Exploiter"
+                    "title": "WebLogic Exploiter"
                 },
                 {
                     "type": "string",
@@ -91,6 +97,13 @@ SCHEMA = {
                         "HadoopExploiter"
                     ],
                     "title": "Hadoop/Yarn Exploiter"
+                },
+                {
+                    "type": "string",
+                    "enum": [
+                        "VSFTPDExploiter"
+                    ],
+                    "title": "VSFTPD Exploiter"
                 }
             ]
         },
@@ -104,6 +117,7 @@ SCHEMA = {
                         "BackdoorUser"
                     ],
                     "title": "Back door user",
+                    "attack_techniques": []
                 },
             ],
         },
@@ -116,14 +130,16 @@ SCHEMA = {
                     "enum": [
                         "SMBFinger"
                     ],
-                    "title": "SMBFinger"
+                    "title": "SMBFinger",
+                    "attack_techniques": ["T1210"]
                 },
                 {
                     "type": "string",
                     "enum": [
                         "SSHFinger"
                     ],
-                    "title": "SSHFinger"
+                    "title": "SSHFinger",
+                    "attack_techniques": ["T1210"]
                 },
                 {
                     "type": "string",
@@ -144,14 +160,16 @@ SCHEMA = {
                     "enum": [
                         "MySQLFinger"
                     ],
-                    "title": "MySQLFinger"
+                    "title": "MySQLFinger",
+                    "attack_techniques": ["T1210"]
                 },
                 {
                     "type": "string",
                     "enum": [
                         "MSSQLFinger"
                     ],
-                    "title": "MSSQLFinger"
+                    "title": "MSSQLFinger",
+                    "attack_techniques": ["T1210"]
                 },
 
                 {
@@ -159,16 +177,30 @@ SCHEMA = {
                     "enum": [
                         "ElasticFinger"
                     ],
-                    "title": "ElasticFinger"
+                    "title": "ElasticFinger",
+                    "attack_techniques": ["T1210"]
                 }
             ]
         }
     },
     "properties": {
         "basic": {
-            "title": "Basic - Credentials",
+            "title": "Basic - Exploits",
             "type": "object",
             "properties": {
+                "general": {
+                    "title": "General",
+                    "type": "object",
+                    "properties": {
+                        "should_exploit": {
+                            "title": "Exploit network machines",
+                            "type": "boolean",
+                            "default": True,
+                            "attack_techniques": ["T1210"],
+                            "description": "Determines if monkey should try to safely exploit machines on the network"
+                        }
+                    }
+                },
                 "credentials": {
                     "title": "Credentials",
                     "type": "object",
@@ -250,8 +282,9 @@ SCHEMA = {
                             "default": [
                             ],
                             "description":
-                                "List of IPs/subnets the monkey should scan."
-                                " Examples: \"192.168.0.1\", \"192.168.0.5-192.168.0.20\", \"192.168.0.5/24\""
+                                "List of IPs/subnets/hosts the monkey should scan."
+                                " Examples: \"192.168.0.1\", \"192.168.0.5-192.168.0.20\", \"192.168.0.5/24\","
+                                " \"printer.example\""
                         }
                     }
                 },
@@ -313,10 +346,50 @@ SCHEMA = {
                     "title": "Behaviour",
                     "type": "object",
                     "properties": {
+                        "custom_PBA_linux_cmd": {
+                            "title": "Linux post breach command",
+                            "type": "string",
+                            "default": "",
+                            "description": "Linux command to be executed after breaching."
+                        },
+                        "PBA_linux_file": {
+                            "title": "Linux post breach file",
+                            "type": "string",
+                            "format": "data-url",
+                            "description": "File to be executed after breaching. "
+                                           "If you want custom execution behavior, "
+                                           "specify it in 'Linux post breach command' field. "
+                                           "Reference your file by filename."
+                        },
+                        "custom_PBA_windows_cmd": {
+                            "title": "Windows post breach command",
+                            "type": "string",
+                            "default": "",
+                            "description": "Windows command to be executed after breaching."
+                        },
+                        "PBA_windows_file": {
+                            "title": "Windows post breach file",
+                            "type": "string",
+                            "format": "data-url",
+                            "description": "File to be executed after breaching. "
+                                           "If you want custom execution behavior, "
+                                           "specify it in 'Windows post breach command' field. "
+                                           "Reference your file by filename."
+                        },
+                        "PBA_windows_filename": {
+                            "title": "Windows PBA filename",
+                            "type": "string",
+                            "default": ""
+                        },
+                        "PBA_linux_filename": {
+                            "title": "Linux PBA filename",
+                            "type": "string",
+                            "default": ""
+                        },
                         "self_delete_in_cleanup": {
                             "title": "Self delete on cleanup",
                             "type": "boolean",
-                            "default": False,
+                            "default": True,
                             "description": "Should the monkey delete its executable when going down"
                         },
                         "use_file_logging": {
@@ -341,6 +414,7 @@ SCHEMA = {
                             "title": "Harvest Azure Credentials",
                             "type": "boolean",
                             "default": True,
+                            "attack_techniques": ["T1003", "T1078"],
                             "description":
                                 "Determine if the Monkey should try to harvest password credentials from Azure VMs"
                         },
@@ -348,12 +422,14 @@ SCHEMA = {
                             "title": "Collect system info",
                             "type": "boolean",
                             "default": True,
+                            "attack_techniques": ["T1082"],
                             "description": "Determines whether to collect system info"
                         },
                         "should_use_mimikatz": {
                             "title": "Should use Mimikatz",
                             "type": "boolean",
                             "default": True,
+                            "attack_techniques": ["T1003", "T1078"],
                             "description": "Determines whether to use Mimikatz"
                         },
                     }
@@ -423,7 +499,13 @@ SCHEMA = {
                             "type": "integer",
                             "default": 60,
                             "description": "Time to keep tunnel open before going down after last exploit (in seconds)"
-                        }
+                        },
+                        "monkey_dir_name": {
+                            "title": "Monkey's directory name",
+                            "type": "string",
+                            "default": r"monkey_dir",
+                            "description": "Directory name for the directory which will contain all of the monkey files"
+                        },
                     }
                 },
                 "classes": {
@@ -505,14 +587,14 @@ SCHEMA = {
                         "dropper_target_path_win_32": {
                             "title": "Dropper target path on Windows (32bit)",
                             "type": "string",
-                            "default": "C:\\Windows\\monkey32.exe",
+                            "default": "C:\\Windows\\temp\\monkey32.exe",
                             "description": "Determines where should the dropper place the monkey on a Windows machine "
                                            "(32bit)"
                         },
                         "dropper_target_path_win_64": {
                             "title": "Dropper target path on Windows (64bit)",
                             "type": "string",
-                            "default": "C:\\Windows\\monkey64.exe",
+                            "default": "C:\\Windows\\temp\\monkey64.exe",
                             "description": "Determines where should the dropper place the monkey on a Windows machine "
                                            "(64 bit)"
                         },
@@ -643,31 +725,6 @@ SCHEMA = {
                         }
                     }
                 },
-                'aws_config': {
-                    'title': 'AWS Configuration',
-                    'type': 'object',
-                    'description': 'These credentials will be used in order to export the monkey\'s findings to the AWS Security Hub.',
-                    'properties': {
-                        'aws_account_id': {
-                            'title': 'AWS account ID',
-                            'type': 'string',
-                            'description': 'Your AWS account ID that is subscribed to security hub feeds',
-                            'default': ''
-                        },
-                        'aws_access_key_id': {
-                            'title': 'AWS access key ID',
-                            'type': 'string',
-                            'description': 'Your AWS public access key ID, can be found in the IAM user interface in the AWS console.',
-                            'default': ''
-                        },
-                        'aws_secret_access_key': {
-                            'title': 'AWS secret access key',
-                            'type': 'string',
-                            'description': 'Your AWS secret access key id, you can get this after creating a public access key in the console.',
-                            'default': ''
-                        }
-                    }
-                }
             }
         },
         "exploits": {
@@ -694,7 +751,8 @@ SCHEMA = {
                                 "ElasticGroovyExploiter",
                                 "Struts2Exploiter",
                                 "WebLogicExploiter",
-                                "HadoopExploiter"
+                                "HadoopExploiter",
+                                "VSFTPDExploiter"
                             ],
                             "description":
                                 "Determines which exploits to use. " + WARNING_SIGN

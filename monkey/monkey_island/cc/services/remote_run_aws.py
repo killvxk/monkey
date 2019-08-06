@@ -1,4 +1,4 @@
-from cc.services.config import ConfigService
+from monkey_island.cc.services.config import ConfigService
 from common.cloud.aws_instance import AwsInstance
 from common.cloud.aws_service import AwsService
 from common.cmd.aws.aws_cmd_runner import AwsCmdRunner
@@ -46,21 +46,11 @@ class RemoteRunAwsService:
         return RemoteRunAwsService.aws_instance.is_aws_instance()
 
     @staticmethod
-    def update_aws_auth_params():
+    def update_aws_region_authless():
         """
-        Updates the AWS authentication parameters according to config
-        :return: True if new params allow successful authentication. False otherwise
+        Updates the AWS region without auth params (via IAM role)
         """
-        access_key_id = ConfigService.get_config_value(['cnc', 'aws_config', 'aws_access_key_id'], False, True)
-        secret_access_key = ConfigService.get_config_value(['cnc', 'aws_config', 'aws_secret_access_key'], False, True)
-
-        if (access_key_id != AwsService.access_key_id) or (secret_access_key != AwsService.secret_access_key):
-            AwsService.set_auth_params(access_key_id, secret_access_key)
-            RemoteRunAwsService.is_auth = AwsService.test_client()
-
         AwsService.set_region(RemoteRunAwsService.aws_instance.region)
-
-        return RemoteRunAwsService.is_auth
 
     @staticmethod
     def get_bitness(instances):

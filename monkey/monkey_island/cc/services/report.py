@@ -9,12 +9,13 @@ from enum import Enum
 
 from six import text_type
 
-from cc.database import mongo
-from cc.report_exporter_manager import ReportExporterManager
-from cc.services.config import ConfigService
-from cc.services.edge import EdgeService
-from cc.services.node import NodeService
-from cc.utils import local_ip_addresses, get_subnets
+from monkey_island.cc.database import mongo
+from monkey_island.cc.models import Monkey
+from monkey_island.cc.report_exporter_manager import ReportExporterManager
+from monkey_island.cc.services.config import ConfigService
+from monkey_island.cc.services.edge import EdgeService
+from monkey_island.cc.services.node import NodeService
+from monkey_island.cc.utils import local_ip_addresses, get_subnets
 from pth_report import PTHReportService
 from common.network.network_range import NetworkRange
 
@@ -41,7 +42,8 @@ class ReportService:
             'Struts2Exploiter': 'Struts2 Exploiter',
             'WebLogicExploiter': 'Oracle WebLogic Exploiter',
             'HadoopExploiter': 'Hadoop/Yarn Exploiter',
-            'MSSQLExploiter': 'MSSQL Exploiter'
+            'MSSQLExploiter': 'MSSQL Exploiter',
+            'VSFTPDExploiter': 'VSFTPD Backdoor Exploited'
         }
 
     class ISSUES_DICT(Enum):
@@ -56,8 +58,9 @@ class ReportService:
         STRUTS2 = 8
         WEBLOGIC = 9
         HADOOP = 10
-        PTH_CRIT_SERVICES_ACCESS = 11,
+        PTH_CRIT_SERVICES_ACCESS = 11
         MSSQL = 12
+        VSFTPD = 13
 
     class WARNINGS_DICT(Enum):
         CROSS_SEGMENT = 0
@@ -132,7 +135,8 @@ class ReportService:
                          (NodeService.get_displayed_node_by_id(edge['from'], True)
                           for edge in EdgeService.get_displayed_edges_by_to(node['id'], True)))),
                     'services': node['services'],
-                    'domain_name': node['domain_name']
+                    'domain_name': node['domain_name'],
+                    'pba_results': node['pba_results'] if 'pba_results' in node else 'None'
                 })
 
         logger.info('Scanned nodes generated for reporting')
@@ -168,7 +172,7 @@ class ReportService:
         PASS_TYPE_DICT = {'password': 'Clear Password', 'lm_hash': 'LM hash', 'ntlm_hash': 'NTLM hash'}
         creds = []
         for telem in mongo.db.telemetry.find(
-                {'telem_type': 'system_info_collection', 'data.credentials': {'$exists': True}},
+                {'telem_category': 'system_info', 'data.credentials': {'$exists': True}},
                 {'data.credentials': 1, 'monkey_guid': 1}
         ):
             monkey_creds = telem['data']['credentials']
@@ -196,7 +200,7 @@ class ReportService:
         """
         creds = []
         for telem in mongo.db.telemetry.find(
-                {'telem_type': 'system_info_collection', 'data.ssh_info': {'$exists': True}},
+                {'telem_category': 'system_info', 'data.ssh_info': {'$exists': True}},
                 {'data.ssh_info': 1, 'monkey_guid': 1}
         ):
             origin = NodeService.get_monkey_by_guid(telem['monkey_guid'])['hostname']
@@ -217,7 +221,7 @@ class ReportService:
         """
         creds = []
         for telem in mongo.db.telemetry.find(
-                {'telem_type': 'system_info_collection', 'data.Azure': {'$exists': True}},
+                {'telem_category': 'system_info', 'data.Azure': {'$exists': True}},
                 {'data.Azure': 1, 'monkey_guid': 1}
         ):
             azure_users = telem['data']['Azure']['usernames']
@@ -253,6 +257,7 @@ class ReportService:
                 else:
                     processed_exploit['type'] = 'hash'
                 return processed_exploit
+        return processed_exploit
 
     @staticmethod
     def process_smb_exploit(exploit):
@@ -286,6 +291,12 @@ class ReportService:
     def process_rdp_exploit(exploit):
         processed_exploit = ReportService.process_general_creds_exploit(exploit)
         processed_exploit['type'] = 'rdp'
+        return processed_exploit
+
+    @staticmethod
+    def process_vsftpd_exploit(exploit):
+        processed_exploit = ReportService.process_general_creds_exploit(exploit)
+        processed_exploit['type'] = 'vsftp'
         return processed_exploit
 
     @staticmethod
@@ -354,15 +365,21 @@ class ReportService:
             'Struts2Exploiter': ReportService.process_struts2_exploit,
             'WebLogicExploiter': ReportService.process_weblogic_exploit,
             'HadoopExploiter': ReportService.process_hadoop_exploit,
-            'MSSQLExploiter': ReportService.process_mssql_exploit
+            'MSSQLExploiter': ReportService.process_mssql_exploit,
+            'VSFTPDExploiter': ReportService.process_vsftpd_exploit
         }
 
         return EXPLOIT_PROCESS_FUNCTION_DICT[exploiter_type](exploit)
 
     @staticmethod
     def get_exploits():
+        query = [{'$match': {'telem_category': 'exploit', 'data.result': True}},
+                 {'$group': {'_id': {'ip_address': '$data.machine.ip_addr'},
+                             'data': {'$first': '$$ROOT'},
+                             }},
+                 {"$replaceRoot": {"newRoot": "$data"}}]
         exploits = []
-        for exploit in mongo.db.telemetry.find({'telem_type': 'exploit', 'data.result': True}):
+        for exploit in mongo.db.telemetry.aggregate(query):
             new_exploit = ReportService.process_exploit(exploit)
             if new_exploit not in exploits:
                 exploits.append(new_exploit)
@@ -371,7 +388,7 @@ class ReportService:
     @staticmethod
     def get_monkey_subnets(monkey_guid):
         network_info = mongo.db.telemetry.find_one(
-            {'telem_type': 'system_info_collection', 'monkey_guid': monkey_guid},
+            {'telem_category': 'system_info', 'monkey_guid': monkey_guid},
             {'data.network_info.networks': 1}
         )
         if network_info is None:
@@ -529,7 +546,7 @@ class ReportService:
 
     @staticmethod
     def get_cross_segment_issues():
-        scans = mongo.db.telemetry.find({'telem_type': 'scan'},
+        scans = mongo.db.telemetry.find({'telem_category': 'scan'},
                                         {'monkey_guid': 1, 'data.machine.ip_addr': 1, 'data.machine.services': 1})
 
         cross_segment_issues = []
@@ -643,6 +660,8 @@ class ReportService:
                     issues_byte_array[ReportService.ISSUES_DICT.ELASTIC.value] = True
                 elif issue['type'] == 'sambacry':
                     issues_byte_array[ReportService.ISSUES_DICT.SAMBACRY.value] = True
+                elif issue['type'] == 'vsftp':
+                    issues_byte_array[ReportService.ISSUES_DICT.VSFTPD.value] = True
                 elif issue['type'] == 'shellshock':
                     issues_byte_array[ReportService.ISSUES_DICT.SHELLSHOCK.value] = True
                 elif issue['type'] == 'conficker':
@@ -701,7 +720,7 @@ class ReportService:
         config_users = ReportService.get_config_users()
         config_passwords = ReportService.get_config_passwords()
         cross_segment_issues = ReportService.get_cross_segment_issues()
-        monkey_latest_modify_time = list(NodeService.get_latest_modified_monkey())[0]['modifytime']
+        monkey_latest_modify_time = Monkey.get_latest_modifytime()
 
         report = \
             {
@@ -766,7 +785,7 @@ class ReportService:
 
         if latest_report_doc:
             report_latest_modifytime = latest_report_doc['meta']['latest_monkey_modifytime']
-            latest_monkey_modifytime = NodeService.get_latest_modified_monkey()[0]['modifytime']
+            latest_monkey_modifytime = Monkey.get_latest_modifytime()
             return report_latest_modifytime == latest_monkey_modifytime
 
         return False

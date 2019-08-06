@@ -4,11 +4,12 @@ import functools
 import logging
 from jsonschema import Draft4Validator, validators
 from six import string_types
+import monkey_island.cc.services.post_breach_files
 
-from cc.database import mongo
-from cc.encryptor import encryptor
-from cc.environment.environment import env
-from cc.utils import local_ip_addresses
+from monkey_island.cc.database import mongo
+from monkey_island.cc.encryptor import encryptor
+from monkey_island.cc.environment.environment import env
+from monkey_island.cc.utils import local_ip_addresses
 from config_schema import SCHEMA
 
 __author__ = "itay.mizeretz"
@@ -23,14 +24,6 @@ ENCRYPTED_CONFIG_ARRAYS = \
         ['internal', 'exploits', 'exploit_lm_hash_list'],
         ['internal', 'exploits', 'exploit_ntlm_hash_list'],
         ['internal', 'exploits', 'exploit_ssh_keys']
-    ]
-
-# This should be used for config values of string type
-ENCRYPTED_CONFIG_STRINGS = \
-    [
-        ['cnc', 'aws_config', 'aws_access_key_id'],
-        ['cnc', 'aws_config', 'aws_account_id'],
-        ['cnc', 'aws_config', 'aws_secret_access_key']
     ]
 
 
@@ -75,9 +68,13 @@ class ConfigService:
         if should_decrypt:
             if config_key_as_arr in ENCRYPTED_CONFIG_ARRAYS:
                 config = [encryptor.dec(x) for x in config]
-            elif config_key_as_arr in ENCRYPTED_CONFIG_STRINGS:
-                config = encryptor.dec(config)
         return config
+
+    @staticmethod
+    def set_config_value(config_key_as_arr, value):
+        mongo_key = ".".join(config_key_as_arr)
+        mongo.db.config.update({'name': 'newconfig'},
+                               {"$set": {mongo_key: value}})
 
     @staticmethod
     def get_flat_config(is_initial_config=False, should_decrypt=True):
@@ -138,6 +135,8 @@ class ConfigService:
 
     @staticmethod
     def update_config(config_json, should_encrypt):
+        # PBA file upload happens on pba_file_upload endpoint and corresponding config options are set there
+        monkey_island.cc.services.post_breach_files.set_config_PBA_files(config_json)
         if should_encrypt:
             try:
                 ConfigService.encrypt_config(config_json)
@@ -173,6 +172,7 @@ class ConfigService:
 
     @staticmethod
     def reset_config():
+        monkey_island.cc.services.post_breach_files.remove_PBA_files()
         config = ConfigService.get_default_config(True)
         ConfigService.set_server_ips_in_config(config)
         ConfigService.update_config(config, should_encrypt=False)
@@ -233,11 +233,8 @@ class ConfigService:
         """
         Same as decrypt_config but for a flat configuration
         """
-        if is_island:
-            keys = [config_arr_as_array[2] for config_arr_as_array in
-                    (ENCRYPTED_CONFIG_ARRAYS + ENCRYPTED_CONFIG_STRINGS)]
-        else:
-            keys = [config_arr_as_array[2] for config_arr_as_array in ENCRYPTED_CONFIG_ARRAYS]
+        keys = [config_arr_as_array[2] for config_arr_as_array in ENCRYPTED_CONFIG_ARRAYS]
+
         for key in keys:
             if isinstance(flat_config[key], collections.Sequence) and not isinstance(flat_config[key], string_types):
                 # Check if we are decrypting ssh key pair
@@ -251,7 +248,7 @@ class ConfigService:
 
     @staticmethod
     def _encrypt_or_decrypt_config(config, is_decrypt=False):
-        for config_arr_as_array in (ENCRYPTED_CONFIG_ARRAYS + ENCRYPTED_CONFIG_STRINGS):
+        for config_arr_as_array in ENCRYPTED_CONFIG_ARRAYS:
             config_arr = config
             parent_config_arr = None
 

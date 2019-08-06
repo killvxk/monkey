@@ -1,6 +1,8 @@
 import os
-import sys
+import shutil
 import struct
+import sys
+import tempfile
 
 from infection_monkey.config import WormConfiguration
 
@@ -16,10 +18,9 @@ def get_dropper_log_path():
 
 
 def is_64bit_windows_os():
-    '''
+    """
     Checks for 64 bit Windows OS using environment variables.
-    :return:
-    '''
+    """
     return 'PROGRAMFILES(X86)' in os.environ
 
 
@@ -35,3 +36,27 @@ def utf_to_ascii(string):
     # Converts utf string to ascii. Safe to use even if string is already ascii.
     udata = string.decode("utf-8")
     return udata.encode("ascii", "ignore")
+
+
+def create_monkey_dir():
+    """
+    Creates directory for monkey and related files
+    """
+    if not os.path.exists(get_monkey_dir_path()):
+        os.mkdir(get_monkey_dir_path())
+
+
+def remove_monkey_dir():
+    """
+    Removes monkey's root directory
+    :return True if removed without errors and False otherwise
+    """
+    try:
+        shutil.rmtree(get_monkey_dir_path())
+        return True
+    except Exception:
+        return False
+
+
+def get_monkey_dir_path():
+    return os.path.join(tempfile.gettempdir(), WormConfiguration.monkey_dir_name)

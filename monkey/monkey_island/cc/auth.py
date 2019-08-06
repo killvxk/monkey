@@ -4,14 +4,14 @@ from flask import current_app, abort
 from flask_jwt import JWT, _jwt_required, JWTError
 from werkzeug.security import safe_str_cmp
 
-from cc.environment.environment import env
+from monkey_island.cc.environment.environment import env
 
 __author__ = 'itay.mizeretz'
 
 
 class User(object):
-    def __init__(self, id, username, secret):
-        self.id = id
+    def __init__(self, user_id, username, secret):
+        self.id = user_id
         self.username = username
         self.secret = secret
 

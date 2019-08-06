@@ -2,6 +2,7 @@ import React from 'react';
 import {Button, Col} from 'react-bootstrap';
 import BreachedServers from 'components/report-components/BreachedServers';
 import ScannedServers from 'components/report-components/ScannedServers';
+import PostBreach from 'components/report-components/PostBreach';
 import {ReactiveGraph} from 'components/reactive-graph/ReactiveGraph';
 import {edgeGroupToColor, options} from 'components/map/MapOptions';
 import StolenPasswords from 'components/report-components/StolenPasswords';
@@ -10,6 +11,7 @@ import {Line} from 'rc-progress';
 import AuthComponent from '../AuthComponent';
 import PassTheHashMapPageComponent from "./PassTheHashMapPage";
 import StrongUsers from "components/report-components/StrongUsers";
+import AttackReport from "components/report-components/AttackReport";
 
 let guardicoreLogoImage = require('../../images/guardicore-logo.png');
 let monkeyLogoImage = require('../../images/monkey-icon.svg');
@@ -30,7 +32,8 @@ class ReportPageComponent extends AuthComponent {
       WEBLOGIC: 9,
       HADOOP: 10,
       PTH_CRIT_SERVICES_ACCESS: 11,
-      MSSQL: 12
+      MSSQL: 12,
+      VSFTPD: 13
     };
 
   Warning =
@@ -78,7 +81,7 @@ class ReportPageComponent extends AuthComponent {
     }
 
     return (
-      <Col xs={12} lg={8}>
+      <Col xs={12} lg={10}>
         <h1 className="page-title no-print">4. Security Report</h1>
         <div style={{'fontSize': '1.2em'}}>
           {content}
@@ -139,6 +142,7 @@ class ReportPageComponent extends AuthComponent {
           {this.generateReportFindingsSection()}
           {this.generateReportRecommendationsSection()}
           {this.generateReportGlanceSection()}
+          {this.generateAttackSection()}
           {this.generateReportFooter()}
         </div>
         <div className="text-center no-print" style={{marginTop: '20px'}}>
@@ -297,7 +301,7 @@ class ReportPageComponent extends AuthComponent {
               return x === true;
             }).length > 0 ?
               <div>
-                During this simulated attack the Monkey uncovered <span
+                During this simulated attack the Monkey uncovered  <span
                 className="label label-warning">
                     {this.state.report.overview.issues.filter(function (x) {
                       return x === true;
@@ -310,6 +314,10 @@ class ReportPageComponent extends AuthComponent {
                   {this.state.report.overview.issues[this.Issue.ELASTIC] ?
                     <li>Elasticsearch servers are vulnerable to <a
                       href="https://www.cvedetails.com/cve/cve-2015-1427">CVE-2015-1427</a>.
+                    </li> : null}
+                  {this.state.report.overview.issues[this.Issue.VSFTPD] ?
+                    <li>VSFTPD is vulnerable to <a
+                      href="https://www.rapid7.com/db/modules/exploit/unix/ftp/vsftpd_234_backdoor">CVE-2011-2523</a>.
                     </li> : null}
                   {this.state.report.overview.issues[this.Issue.SAMBACRY] ?
                     <li>Samba servers are vulnerable to ‘SambaCry’ (<a
@@ -335,9 +343,7 @@ class ReportPageComponent extends AuthComponent {
                       href="https://cwiki.apache.org/confluence/display/WW/S2-045">
                       CVE-2017-5638</a>)</li> : null }
                   {this.state.report.overview.issues[this.Issue.WEBLOGIC] ?
-                    <li>Oracle WebLogic servers are vulnerable to remote code execution. (<a
-                      href="https://nvd.nist.gov/vuln/detail/CVE-2017-10271">
-                      CVE-2017-10271</a>)</li> : null }
+                    <li>Oracle WebLogic servers are susceptible to a remote code execution vulnerability.</li> : null }
                   {this.state.report.overview.issues[this.Issue.HADOOP] ?
                     <li>Hadoop/Yarn servers are vulnerable to remote code execution.</li> : null }
                   {this.state.report.overview.issues[this.Issue.PTH_CRIT_SERVICES_ACCESS] ?
@@ -403,21 +409,24 @@ class ReportPageComponent extends AuthComponent {
   generateReportRecommendationsSection() {
     return (
       <div id="recommendations">
-        <h3>
-          Domain related recommendations
-        </h3>
+        {/* Checks if there are any domain issues. If there are more then one: render the title. Otherwise,
+         * don't render it (since the issues themselves will be empty. */}
+        {Object.keys(this.state.report.recommendations.domain_issues).length !== 0 ?
+                     <h3>Domain related recommendations</h3> : null }
         <div>
           {this.generateIssues(this.state.report.recommendations.domain_issues)}
         </div>
-        <h3>
-          Machine related Recommendations
-        </h3>
+        {/* Checks if there are any issues. If there are more then one: render the title. Otherwise,
+         * don't render it (since the issues themselves will be empty. */}
+        {Object.keys(this.state.report.recommendations.issues).length !== 0 ?
+          <h3>Machine related recommendations</h3> : null }
         <div>
           {this.generateIssues(this.state.report.recommendations.issues)}
         </div>
       </div>
     );
   }
+
 
   generateReportGlanceSection() {
     let exploitPercentage =
@@ -461,6 +470,9 @@ class ReportPageComponent extends AuthComponent {
           <BreachedServers data={this.state.report.glance.exploited}/>
         </div>
         <div style={{marginBottom: '20px'}}>
+          <PostBreach data={this.state.report.glance.scanned}/>
+        </div>
+        <div style={{marginBottom: '20px'}}>
           <ScannedServers data={this.state.report.glance.scanned}/>
         </div>
         <div style={{position: 'relative', height: '80vh'}}>
@@ -495,6 +507,21 @@ class ReportPageComponent extends AuthComponent {
         <br />
       </div>
     );
+  }
+
+  generateAttackSection() {
+    return (<div id="attack">
+              <h3>
+                ATT&CK report
+              </h3>
+              <p>
+                This report shows information about ATT&CK techniques used by Infection Monkey.
+              </p>
+              <div>
+                <AttackReport reportData={this.state.report}/>
+              </div>
+              <br />
+            </div>)
   }
 
   generateReportFooter() {
@@ -675,6 +702,28 @@ class ReportPageComponent extends AuthComponent {
     );
   }
 
+  generateVsftpdBackdoorIssue(issue) {
+    return (
+      <li>
+        Update your VSFTPD server to the latest version vsftpd-3.0.3.
+        <CollapsibleWellComponent>
+          The machine <span className="label label-primary">{issue.machine}</span> (<span
+          className="label label-info" style={{margin: '2px'}}>{issue.ip_address}</span>) has a backdoor running at port  <span
+          className="label label-danger">6200</span>.
+          <br/>
+          The attack was made possible because the VSFTPD server was not patched against CVE-2011-2523.
+          <br/><br/>In July 2011, it was discovered that vsftpd version 2.3.4 downloadable from the master site had been compromised.
+          Users logging into a compromised vsftpd-2.3.4 server may issue a ":)" smileyface as the username and gain a command shell on port 6200.
+          <br/><br/>
+          The Monkey executed commands by first logging in with ":)" in the username and then sending commands to the backdoor at port 6200.
+          <br/><br/>Read more about the security issue and remediation <a
+                      href="https://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2011-2523"
+                    >here</a>.
+        </CollapsibleWellComponent>
+      </li>
+    );
+  }
+
   generateElasticIssue(issue) {
     return (
       <li>
@@ -838,16 +887,15 @@ class ReportPageComponent extends AuthComponent {
   generateWebLogicIssue(issue) {
     return (
       <li>
-        Install Oracle <a href="http://www.oracle.com/technetwork/security-advisory/cpuoct2017-3236626.html">
-        critical patch updates.</a> Or update to the latest version. Vulnerable versions are
-        10.3.6.0.0, 12.1.3.0.0, 12.2.1.1.0 and 12.2.1.2.0.
+        Update Oracle WebLogic server to the latest supported version.
         <CollapsibleWellComponent>
           Oracle WebLogic server at <span className="label label-primary">{issue.machine}</span> (<span
-          className="label label-info" style={{margin: '2px'}}>{issue.ip_address}</span>) is vulnerable to <span
-          className="label label-danger">remote code execution</span> attack.
+          className="label label-info" style={{margin: '2px'}}>{issue.ip_address}</span>) is vulnerable to one of <span
+          className="label label-danger">remote code execution</span> attacks.
           <br/>
-          The attack was made possible due to incorrect permission assignment in Oracle Fusion Middleware
-          (subcomponent: WLS Security).
+          The attack was made possible due to one of the following vulnerabilities:
+          <a href={"https://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2017-10271"}> CVE-2017-10271</a> or
+          <a href={"https://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2019-2725"}> CVE-2019-2725</a>
         </CollapsibleWellComponent>
       </li>
     );
@@ -890,6 +938,9 @@ generateMSSQLIssue(issue) {
   generateIssue = (issue) => {
     let data;
     switch (issue.type) {
+      case 'vsftp':
+        data = this.generateVsftpdBackdoorIssue(issue);
+        break;
       case 'smb_password':
         data = this.generateSmbPasswordIssue(issue);
         break;

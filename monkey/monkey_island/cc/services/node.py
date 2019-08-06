@@ -2,11 +2,13 @@ from datetime import datetime, timedelta
 
 from bson import ObjectId
 
-import cc.services.log
-from cc.database import mongo
-from cc.services.edge import EdgeService
-from cc.utils import local_ip_addresses
+import monkey_island.cc.services.log
+from monkey_island.cc.database import mongo
+from monkey_island.cc.models import Monkey
+from monkey_island.cc.services.edge import EdgeService
+from monkey_island.cc.utils import local_ip_addresses
 import socket
+from monkey_island.cc import models
 
 __author__ = "itay.mizeretz"
 
@@ -59,14 +61,14 @@ class NodeService:
         else:
             new_node["services"] = []
 
-        new_node['has_log'] = cc.services.log.LogService.log_exists(ObjectId(node_id))
+        new_node['has_log'] = monkey_island.cc.services.log.LogService.log_exists(ObjectId(node_id))
         return new_node
 
     @staticmethod
     def get_node_label(node):
         domain_name = ""
         if node["domain_name"]:
-            domain_name = " ("+node["domain_name"]+")"
+            domain_name = " (" + node["domain_name"] + ")"
         return node["os"]["version"] + " : " + node["ip_addresses"][0] + domain_name
 
     @staticmethod
@@ -104,7 +106,8 @@ class NodeService:
 
     @staticmethod
     def get_monkey_critical_services(monkey_id):
-        critical_services = mongo.db.monkey.find_one({'_id': monkey_id}, {'critical_services': 1}).get('critical_services', [])
+        critical_services = mongo.db.monkey.find_one({'_id': monkey_id}, {'critical_services': 1}).get(
+            'critical_services', [])
         return critical_services
 
     @staticmethod
@@ -123,7 +126,7 @@ class NodeService:
             monkey_type = "manual" if NodeService.get_monkey_manual_run(monkey) else "monkey"
 
         monkey_os = NodeService.get_monkey_os(monkey)
-        monkey_running = "" if monkey["dead"] else "_running"
+        monkey_running = "" if Monkey.get_single_monkey_by_id(monkey["_id"]).is_dead() else "_running"
         return "%s_%s%s" % (monkey_type, monkey_os, monkey_running)
 
     @staticmethod
@@ -135,14 +138,16 @@ class NodeService:
     @staticmethod
     def monkey_to_net_node(monkey, for_report=False):
         label = monkey['hostname'] if for_report else NodeService.get_monkey_label(monkey)
+        is_monkey_dead = Monkey.get_single_monkey_by_id(monkey["_id"]).is_dead()
         return \
             {
                 "id": monkey["_id"],
                 "label": label,
                 "group": NodeService.get_monkey_group(monkey),
                 "os": NodeService.get_monkey_os(monkey),
-                "dead": monkey["dead"],
-                "domain_name": ""
+                "dead": is_monkey_dead,
+                "domain_name": "",
+                "pba_results": monkey["pba_results"] if "pba_results" in monkey else []
             }
 
     @staticmethod
@@ -292,7 +297,8 @@ class NodeService:
 
     @staticmethod
     def is_any_monkey_alive():
-        return mongo.db.monkey.find_one({'dead': False}) is not None
+        all_monkeys = models.Monkey.objects()
+        return any(not monkey.is_dead() for monkey in all_monkeys)
 
     @staticmethod
     def is_any_monkey_exists():
@@ -301,10 +307,6 @@ class NodeService:
     @staticmethod
     def is_monkey_finished_running():
         return NodeService.is_any_monkey_exists() and not NodeService.is_any_monkey_alive()
-
-    @staticmethod
-    def get_latest_modified_monkey():
-        return mongo.db.monkey.find({}).sort('modifytime', -1).limit(1)
 
     @staticmethod
     def add_credentials_to_monkey(monkey_id, creds):
